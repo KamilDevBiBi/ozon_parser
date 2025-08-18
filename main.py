@@ -1,0 +1,184 @@
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium_stealth import stealth
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.expected_conditions import presence_of_element_located
+from selenium.webdriver.remote.webelement import WebElement # для аннотации
+
+import time
+import json
+from bs4 import BeautifulSoup, Tag
+
+opts = Options()
+
+# скрываем от веб-сайта, что браузер управляется драйвером
+opts.add_argument("--start-maximized")
+opts.add_experimental_option("useAutomationExtension", False)
+opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+
+service = Service(executable_path="chromedriver.exe")
+
+driver = webdriver.Chrome(service=service)
+
+# включаем скрытый режим, чтобы обойти защиту от скраппинга от озона
+stealth(driver=driver,
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        platform="Win32",
+        languages=["ru-RU", "ru"],
+        vendor="Google Inc."
+        )
+
+driver.get("https://www.ozon.ru")
+
+def scroll_page(deep):
+    for _ in range(deep):
+        driver.execute_script("window.scrollBy(0, 600)")
+        time.sleep(0.2)
+
+# Ждём пока загрузит сайт
+WebDriverWait(driver, 5).until(
+    presence_of_element_located((By.ID, "__ozon"))
+)
+
+scroll_page(4)
+
+html_doc = BeautifulSoup(driver.page_source, "lxml")
+
+s_paginator = driver.find_element(By.CLASS_NAME, "container").find_elements(By.XPATH, "./*")[-1]
+
+
+catalog_wrapper = html_doc.find(class_="container")
+orders_wrapper_children = catalog_wrapper.find_all("div", recursive=False)
+
+first_orders = orders_wrapper_children[2].find("div").find("div").find("div").children
+paginator = orders_wrapper_children[-1]
+
+
+
+def get_short_name(name: str) -> str:
+    if len(name) > 24:
+        splited_text = name.split()
+        length = 0
+        short_name = ""
+        for i in range(len(splited_text)):
+            length += len(splited_text[i])
+            if length >= 24:
+                short_name = " ".join(splited_text[:i + 1])
+                break
+
+        if not short_name:
+            return name
+
+        return short_name + "..."
+    return name
+
+def get_pretty_price(price: str) -> str:
+    # меняем символ THSP на пробел, чтобы корректно показать его в json
+    if not price:
+        time.sleep(1000)
+    price = price.replace("\u2009", " ")
+    price = price[:-2] + price[-1]
+    return price
+
+order_data = dict()
+def parse_orders(orders_row: list[Tag]) -> None:
+    for order in orders_row:
+        special_offer = "Отсутствует"
+
+        card_order = order.find("a")
+        try:
+            special_offer = card_order.find("section").text
+        except Exception as E:
+            pass
+
+        data_wrapper = order.find_all(recursive=False)[-1].find_all(recursive=False)
+
+        price_data = data_wrapper[0].find("div").find_all(recursive=False)
+
+        cur_price = get_pretty_price(price_data[0].text)
+        last_price = cur_price
+        discount = "Цена фиксирована"
+
+        if len(price_data) > 2:
+            last_price = get_pretty_price(price_data[1].text)
+            discount = price_data[2].text
+
+        name = get_short_name(data_wrapper[1].text)
+
+        rating_field = data_wrapper[2].find_all(recursive=False)
+        score = rating_field[0].text
+        responses = rating_field[1].text.replace("\u00A0", " ").replace("\u2009", " ")
+
+        if name in order_data:
+            name += "2"
+        order_data[name] = {
+            "Специальные предложения": special_offer,
+            "Цена": cur_price,
+            "Прошлая цена": last_price,
+            "Скидка": discount,
+            "Оценка товара": score,
+            "Отзывы": responses
+        }
+
+def parse_infinite_paginator(paginator_wrapper: WebElement) -> None:
+
+    inf_paginator = (paginator_wrapper.find_element(By.TAG_NAME, "div")
+                    .find_elements(By.XPATH, "./*")[-2]
+                    )
+
+    main_content = (inf_paginator.find_element(By.TAG_NAME, "div")
+                    .find_element(By.TAG_NAME, "div")
+                    .find_element(By.TAG_NAME, "div")
+                    )
+
+    all_orders_wrapper = main_content.find_elements(By.XPATH, "./*")[1]
+    orders_wrapper = all_orders_wrapper.find_elements(By.XPATH, "./*")
+
+    print(f"Сейчас в главном каталоге - {len(orders_wrapper) * 10} товаров")
+    answer = input("Прокрутить страницу дальше? ")
+    while answer == "да":
+        scroll_page(1)
+        orders_wrapper = all_orders_wrapper.find_elements(By.XPATH, "./*")
+        print(f"Сейчас в главном каталоге - {len(orders_wrapper) * 10} товаров")
+        answer = input("Прокрутить страницу дальше? ")
+
+
+    for order_wrapper in orders_wrapper:
+        orders_row = (order_wrapper.find_element(By.TAG_NAME, "div")
+                      .find_element(By.TAG_NAME, "div")
+                      .find_element(By.TAG_NAME, "div")
+                      .find_element(By.TAG_NAME, "div")
+                      )
+        orders_row = orders_row.get_attribute("outerHTML")
+        orders_row = BeautifulSoup(orders_row, "lxml")
+        orders_row = orders_row.find("div")
+        orders_row = orders_row.find_all(recursive=False)
+        parse_orders(orders_row)
+
+
+def get_next_fifty_orders() -> None:
+    paginator = orders_wrapper_children[-1].find("div")
+    paginator_children = paginator.find_all("div", recursive=False)
+
+    paginator_orders = list()
+    for i in range(0, 13, 4):
+        paginator_orders.append(paginator_children[i])
+
+    for order in paginator_orders[:3]:
+        parse_orders(order.find("div").find("div").find("div").children)
+
+    parse_infinite_paginator(s_paginator)
+
+
+
+get_next_fifty_orders()
+print(f"Товаров получено - {len(order_data)} шт.")
+with open("orders.json", "w", encoding="utf-8") as f:
+    json.dump(order_data, f, indent=4, ensure_ascii=False)
+
+
+time.sleep(1000)
+
+driver.quit()
