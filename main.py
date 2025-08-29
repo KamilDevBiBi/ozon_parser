@@ -56,13 +56,8 @@ html_doc = BeautifulSoup(driver.page_source, "lxml")
 
 s_paginator = driver.find_element(By.CLASS_NAME, "container").find_elements(By.XPATH, "./*")[-1]
 
-error_rate = 0
-def get_next_paginator_orders(prev: int, all_orders_wrapper: WebElement, last_index: int) -> list[WebElement]:
-    global error_rate
-
+def get_next_paginator_orders(all_orders_wrapper: WebElement, last_index: int) -> list[WebElement]:
     scroll_page(1)
-    cur_scroll_distance = driver.execute_script("return window.pageYOffset")
-    error_rate += 833 - (cur_scroll_distance - prev)
 
     orders_wrapper = all_orders_wrapper.find_elements(By.XPATH, "./*")
     cur_index = int(orders_wrapper[-1].find_element(By.TAG_NAME, "div").get_dom_attribute("data-index"))
@@ -85,7 +80,6 @@ def get_next_paginator_orders(prev: int, all_orders_wrapper: WebElement, last_in
 
     return orders_wrapper
 
-# get_paginator(s_paginator)
 def parse_infinite_paginator(paginator_wrapper: WebElement) -> None:
 
     inf_paginator = (paginator_wrapper.find_element(By.TAG_NAME, "div")
@@ -104,8 +98,7 @@ def parse_infinite_paginator(paginator_wrapper: WebElement) -> None:
     print(f"Сейчас в главном каталоге - {(last_index + 1) * 10} товаров")
     answer = input("Прокрутить страницу дальше? ")
     while answer == "да":
-        prev = driver.execute_script("return window.pageYOffset")
-        orders_wrapper = get_next_paginator_orders(prev, all_orders_wrapper, last_index)
+        orders_wrapper = get_next_paginator_orders(all_orders_wrapper, last_index)
         last_index = int(all_orders_wrapper.find_elements(By.XPATH, "./*")[-1].find_element(By.TAG_NAME, "div").get_dom_attribute("data-index"))
 
         print(f"Сейчас в главном каталоге - {(last_index + 1) * 10} товаров")
