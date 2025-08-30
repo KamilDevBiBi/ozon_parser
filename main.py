@@ -52,31 +52,35 @@ WebDriverWait(driver, 5).until(
 scroll_page(3)
 scroll_page(1, 682)
 
+orders_count = int(input("Напишите сколько товаров вы хотите получить: "))
+
 html_doc = BeautifulSoup(driver.page_source, "lxml")
 
 s_paginator = driver.find_element(By.CLASS_NAME, "container").find_elements(By.XPATH, "./*")[-1]
 
 def get_next_paginator_orders(all_orders_wrapper: WebElement, last_index: int) -> list[WebElement]:
-    scroll_page(1)
+    for _ in range(orders_count // 10):
+        scroll_page(1)
+        time.sleep(0.5)
 
-    orders_wrapper = all_orders_wrapper.find_elements(By.XPATH, "./*")
-    cur_index = int(orders_wrapper[-1].find_element(By.TAG_NAME, "div").get_dom_attribute("data-index"))
-    if cur_index == last_index:
-        count = 0
-        while True:
-            driver.execute_script("window.scrollBy(0, 1)")
-            count += 1
-            time.sleep(0.1)
-            orders_wrapper = all_orders_wrapper.find_elements(By.XPATH, "./*")
-            cur_index = int(orders_wrapper[-1].find_element(By.TAG_NAME, "div").get_dom_attribute("data-index"))
-            if cur_index > last_index:
-                if cur_index >= 4:
-                    order_html = orders_wrapper[0].get_attribute("outerHTML")
-                    order_soup = BeautifulSoup(order_html, "lxml")
-                    order = order_soup.find("div").find("div").find("div").find("div").find("div")
+        orders_wrapper = all_orders_wrapper.find_elements(By.XPATH, "./*")
+        cur_index = int(orders_wrapper[-1].find_element(By.TAG_NAME, "div").get_dom_attribute("data-index"))
+        if cur_index == last_index:
+            count = 0
+            while True:
+                driver.execute_script("window.scrollBy(0, 1)")
+                count += 1
+                time.sleep(0.1)
+                orders_wrapper = all_orders_wrapper.find_elements(By.XPATH, "./*")
+                cur_index = int(orders_wrapper[-1].find_element(By.TAG_NAME, "div").get_dom_attribute("data-index"))
+                if cur_index > last_index:
+                    if cur_index >= 4:
+                        order_html = orders_wrapper[0].get_attribute("outerHTML")
+                        order_soup = BeautifulSoup(order_html, "lxml")
+                        order = order_soup.find("div").find("div").find("div").find("div").find("div")
 
-                    parse_orders(order.find_all(recursive=False))
-                break
+                        parse_orders(order.find_all(recursive=False))
+                    break
 
     return orders_wrapper
 
@@ -92,17 +96,9 @@ def parse_infinite_paginator(paginator_wrapper: WebElement) -> None:
                     )
 
     all_orders_wrapper = main_content.find_elements(By.XPATH, "./*")[1]
-    orders_wrapper = all_orders_wrapper.find_elements(By.XPATH, "./*")
     last_index = int(all_orders_wrapper.find_elements(By.XPATH, "./*")[-1].find_element(By.TAG_NAME, "div").get_dom_attribute("data-index"))
 
-    print(f"Сейчас в главном каталоге - {(last_index + 1) * 10} товаров")
-    answer = input("Прокрутить страницу дальше? ")
-    while answer == "да":
-        orders_wrapper = get_next_paginator_orders(all_orders_wrapper, last_index)
-        last_index = int(all_orders_wrapper.find_elements(By.XPATH, "./*")[-1].find_element(By.TAG_NAME, "div").get_dom_attribute("data-index"))
-
-        print(f"Сейчас в главном каталоге - {(last_index + 1) * 10} товаров")
-        answer = input("Прокрутить страницу дальше? ")
+    orders_wrapper = get_next_paginator_orders(all_orders_wrapper, last_index)
 
     for order_wrapper in orders_wrapper:
         orders_row = (order_wrapper.find_element(By.TAG_NAME, "div")
@@ -203,6 +199,7 @@ def get_next_fifty_orders() -> None:
 
     for order in paginator_orders[:3]:
         parse_orders(order.find("div").find("div").find("div").children)
+        print(len(order_data))
 
     parse_infinite_paginator(s_paginator)
 
