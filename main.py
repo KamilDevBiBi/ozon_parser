@@ -35,7 +35,7 @@ stealth(driver=driver,
 
 driver.get("https://www.ozon.ru")
 
-def scroll_page(deep: int, distance: int = 833) -> None:
+def scroll_page(deep: int, distance: int = 1041) -> None:
     for _ in range(deep):
         # 833px - расстояние скролла, которое нужно пагинотору озона,
         # чтобы загрузить следующий div с товарами
@@ -47,21 +47,38 @@ WebDriverWait(driver, 5).until(
     presence_of_element_located((By.ID, "__ozon"))
 )
 
-# 3181px - расстояние от текущего низа до самого вверха страницы,
-# в котором появляется первый див с товарами в пагинаторе
-scroll_page(3)
-scroll_page(1, 682)
+
+
+scroll_page(6, 200)
+
+
+distance_to_top = driver.execute_script(f"return document.querySelector(\".container\").lastChild.firstChild.children[8].getBoundingClientRect().top + window.pageYOffset")
+
+window_height = driver.execute_script("return window.innerHeight")
+first_orders_distance = distance_to_top - window_height
+# first_orders_distance - расстояние, которое нужно проскроллить,
+# чтобы пагинатор озона загрузил первый блок товаров
+
+scroll_page(6, 200)
+scroll_page(1, 34)
 
 orders_count = int(input("Напишите сколько товаров вы хотите получить: "))
 
-html_doc = BeautifulSoup(driver.page_source, "lxml")
-
-s_paginator = driver.find_element(By.CLASS_NAME, "container").find_elements(By.XPATH, "./*")[-1]
 
 def get_next_paginator_orders(all_orders_wrapper: WebElement, last_index: int) -> list[WebElement]:
-    for _ in range(orders_count // 10):
-        scroll_page(1)
+    for _ in range(orders_count // 10 - 2):
+        scroll_page(3, 347)
         time.sleep(0.5)
+
+        orders_wrapper = all_orders_wrapper.find_elements(By.XPATH, "./*")
+        cur_index = int(orders_wrapper[-1].find_element(By.TAG_NAME, "div").get_dom_attribute("data-index"))
+
+        if cur_index >= 5:
+            order_html = orders_wrapper[0].get_attribute("outerHTML")
+            order_soup = BeautifulSoup(order_html, "lxml")
+            order = order_soup.find("div").find("div").find("div").find("div").find("div")
+
+            parse_orders(order.find_all(recursive=False))
 
         orders_wrapper = all_orders_wrapper.find_elements(By.XPATH, "./*")
         cur_index = int(orders_wrapper[-1].find_element(By.TAG_NAME, "div").get_dom_attribute("data-index"))
@@ -74,12 +91,6 @@ def get_next_paginator_orders(all_orders_wrapper: WebElement, last_index: int) -
                 orders_wrapper = all_orders_wrapper.find_elements(By.XPATH, "./*")
                 cur_index = int(orders_wrapper[-1].find_element(By.TAG_NAME, "div").get_dom_attribute("data-index"))
                 if cur_index > last_index:
-                    if cur_index >= 4:
-                        order_html = orders_wrapper[0].get_attribute("outerHTML")
-                        order_soup = BeautifulSoup(order_html, "lxml")
-                        order = order_soup.find("div").find("div").find("div").find("div").find("div")
-
-                        parse_orders(order.find_all(recursive=False))
                     break
 
     return orders_wrapper
@@ -182,27 +193,27 @@ def parse_orders(orders_row: list[Tag]) -> None:
             "Отзывы": responses
         }
 
-catalog_wrapper = html_doc.find(class_="container")
-orders_wrapper_children = catalog_wrapper.find_all("div", recursive=False)
 
-first_orders = orders_wrapper_children[2].find("div").find("div").find("div").children
-paginator = orders_wrapper_children[-1]
 
 
 def get_next_fifty_orders() -> None:
-    paginator = orders_wrapper_children[-1].find("div")
-    paginator_children = paginator.find_all("div", recursive=False)
+    # paginator_soup = BeautifulSoup(paginator.get_attribute("innerHTML"), "lxml")
+    # paginator_children = paginator_soup.find("div").find_all("div", recursive=False)
+    # paginator_orders = list()
+    # for i in range(0, 13, 4):
+    #     paginator_orders.append(paginator_children[i])
+    #
+    # for order in paginator_orders[:3]:
+    #     parse_orders(order.find("div").find("div").find("div").children)
+    #     print(len(order_data))
 
-    paginator_orders = list()
-    for i in range(0, 13, 4):
-        paginator_orders.append(paginator_children[i])
+    parse_infinite_paginator(paginator)
 
-    for order in paginator_orders[:3]:
-        parse_orders(order.find("div").find("div").find("div").children)
-        print(len(order_data))
 
-    parse_infinite_paginator(s_paginator)
+catalog_wrapper = driver.find_element(By.CLASS_NAME, "container")
+orders_wrapper_children = catalog_wrapper.find_elements(By.XPATH, "./*")
 
+paginator = orders_wrapper_children[-1]
 
 
 get_next_fifty_orders()
