@@ -35,40 +35,46 @@ stealth(driver=driver,
 
 driver.get("https://www.ozon.ru")
 
-def scroll_page(deep: int, distance: int = 1041) -> None:
+def scroll_page(deep: int, distance: float = 200) -> None:
     for _ in range(deep):
         # 833px - расстояние скролла, которое нужно пагинотору озона,
         # чтобы загрузить следующий div с товарами
         driver.execute_script(f"window.scrollBy(0, {distance})")
-        time.sleep(0.2)
+        time.sleep(0.4)
 
 # Ждём пока загрузит сайт
 WebDriverWait(driver, 5).until(
     presence_of_element_located((By.ID, "__ozon"))
 )
 
+scroll_page(6)
+scroll_page(1, 192)
+#загружаем все товары в paginator
 
 
-scroll_page(6, 200)
-
-
-distance_to_top = driver.execute_script(f"return document.querySelector(\".container\").lastChild.firstChild.children[8].getBoundingClientRect().top + window.pageYOffset")
+top_distance = driver.execute_script(f"return document.querySelector(\".container\").lastChild.firstChild.children[8].getBoundingClientRect().top + window.pageYOffset")
 
 window_height = driver.execute_script("return window.innerHeight")
-first_orders_distance = distance_to_top - window_height
+first_orders_scroll = top_distance - window_height
+
+scroll_page(5, 200)
+scroll_page(1, 48)
 # first_orders_distance - расстояние, которое нужно проскроллить,
 # чтобы пагинатор озона загрузил первый блок товаров
 
-scroll_page(6, 200)
-scroll_page(1, 34)
-
 orders_count = int(input("Напишите сколько товаров вы хотите получить: "))
 
+catalog_wrapper = driver.find_element(By.CLASS_NAME, "container")
+orders_wrapper_children = catalog_wrapper.find_elements(By.XPATH, "./*")
+
+paginator = orders_wrapper_children[-1]
+prev = 1
 
 def get_next_paginator_orders(all_orders_wrapper: WebElement, last_index: int) -> list[WebElement]:
-    for _ in range(orders_count // 10 - 2):
-        scroll_page(3, 347)
-        time.sleep(0.5)
+    orders_wrapper = list()
+    for _ in range(orders_count // 10 - 1):
+        scroll_page(4, 260.5)
+        time.sleep(1)
 
         orders_wrapper = all_orders_wrapper.find_elements(By.XPATH, "./*")
         cur_index = int(orders_wrapper[-1].find_element(By.TAG_NAME, "div").get_dom_attribute("data-index"))
@@ -94,6 +100,7 @@ def get_next_paginator_orders(all_orders_wrapper: WebElement, last_index: int) -
                     break
 
     return orders_wrapper
+
 
 def parse_infinite_paginator(paginator_wrapper: WebElement) -> None:
 
@@ -141,6 +148,7 @@ def get_short_name(name: str) -> str:
         return short_name + "..."
     return name
 
+
 def get_pretty_price(price: str) -> str:
     # меняем символ THSP на пробел, чтобы корректно показать его в json
     if not price:
@@ -148,6 +156,7 @@ def get_pretty_price(price: str) -> str:
     price = price.replace("\u2009", " ")
     price = price[:-2] + price[-1]
     return price
+
 
 order_data = dict()
 def parse_orders(orders_row: list[Tag]) -> None:
@@ -172,7 +181,7 @@ def parse_orders(orders_row: list[Tag]) -> None:
             last_price = get_pretty_price(price_data[1].text)
             discount = price_data[2].text
 
-        name = get_short_name(data_wrapper[1].text)
+        name = f"{len(order_data) + 1} {get_short_name(data_wrapper[1].text)}"
 
         score = "оценка отсутствует"
         responses = "отзывы отсутствуют"
@@ -182,8 +191,7 @@ def parse_orders(orders_row: list[Tag]) -> None:
             score = rating_field[0].text
             responses = rating_field[1].text.replace("\u00A0", " ").replace("\u2009", " ")
 
-        if name in order_data:
-            name += "2"
+
         order_data[name] = {
             "Специальные предложения": special_offer,
             "Цена": cur_price,
@@ -192,8 +200,6 @@ def parse_orders(orders_row: list[Tag]) -> None:
             "Оценка товара": score,
             "Отзывы": responses
         }
-
-
 
 
 def get_next_fifty_orders() -> None:
@@ -218,9 +224,23 @@ paginator = orders_wrapper_children[-1]
 
 get_next_fifty_orders()
 print(f"Товаров получено - {len(order_data)} шт.")
+
+
 with open("orders.json", "w", encoding="utf-8") as f:
     json.dump(order_data, f, indent=4, ensure_ascii=False)
 
+
+def sort_by_price():
+    sorted_data = sorted(order_data, key= lambda x: x[1][0])
+    with open("orders.json", "w", encoding="utf-8") as f:
+        json.dump(sorted_data, f, indent=4, ensure_ascii=False)
+
+
+while True:
+    print("1. Сортировать по цене")
+    oper = int(input("Введите номер операции"))
+    if oper == 1:
+        sort_by_price()
 
 time.sleep(1000)
 
